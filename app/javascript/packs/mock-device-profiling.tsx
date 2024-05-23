@@ -81,6 +81,7 @@ function MockDeviceProfilingOptions() {
   const options = [
     { value: 'pass', title: 'Pass' },
     { value: 'reject', title: 'Reject' },
+    { value: 'hard_reject', title: 'Reject (hard)' },
     { value: 'review', title: 'Review' },
     { value: 'no_result', title: 'No Result' },
     { value: 'chaotic', title: 'Do something chaotic' },

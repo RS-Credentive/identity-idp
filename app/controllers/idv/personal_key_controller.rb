@@ -70,6 +70,8 @@ module Idv
     def next_step
       if in_person_enrollment?
         idv_in_person_ready_to_verify_url
+      elsif fraud_rejection?
+        idv_not_verified_url
       elsif fraud_check_failed?
         idv_please_call_url
       elsif session[:sp]

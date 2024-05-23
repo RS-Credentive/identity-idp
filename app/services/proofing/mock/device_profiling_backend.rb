@@ -8,6 +8,7 @@ module Proofing
         pass
         reject
         review
+        hard_reject
       ].to_set.freeze
 
       RESULT_TIMEOUT = 3600

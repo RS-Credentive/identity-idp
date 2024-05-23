@@ -71,6 +71,8 @@ module Idv
         selfie_check_performed: session[:selfie_check_performed],
       )
 
+      profile.reject_for_fraud(notify_user: false) if threatmetrix_hard_reject?
+
       profile.activate unless profile.reason_not_to_activate
 
       self.profile_id = profile.id
@@ -316,11 +318,15 @@ module Idv
       return if !FeatureManagement.proofing_device_profiling_decisioning_enabled?
 
       case threatmetrix_review_status
-      when 'reject'
+      when 'reject', 'hard_reject'
         'threatmetrix_reject'
       when 'review'
         'threatmetrix_review'
       end
+    end
+
+    def threatmetrix_hard_reject?
+      threatmetrix_review_status == 'hard_reject'
     end
   end
 end

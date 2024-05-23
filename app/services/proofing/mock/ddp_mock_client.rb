@@ -69,7 +69,7 @@ module Proofing
         case device_status
         when 'no_result'
           return nil
-        when 'reject', 'review', 'pass'
+        when 'hard_reject', 'reject', 'review', 'pass'
           device_status
         end
       end
