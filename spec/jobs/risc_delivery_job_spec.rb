@@ -23,7 +23,7 @@ RSpec.describe RiscDeliveryJob do
         event_type: event_type,
         status: nil,
         success: false,
-        transport: 'direct',
+        transport: 'async',
       }
     end
 
@@ -39,6 +39,8 @@ RSpec.describe RiscDeliveryJob do
 
     before do
       allow(job).to receive(:analytics).and_return(job_analytics)
+      allow(job).to receive(:queue_adapter).
+        and_return(ActiveJob::QueueAdapters::GoodJobAdapter.new)
     end
 
     it 'POSTs the jwt to the given URL' do
@@ -68,43 +70,24 @@ RSpec.describe RiscDeliveryJob do
         stub_request(:post, push_notification_url).to_raise(Faraday::SSLError)
       end
 
-      context 'when performed inline' do
+      it 'raises and retries via ActiveJob' do
+        expect { perform }.to raise_error(Faraday::SSLError)
+      end
+
+      context 'it has already failed twice' do
+        before do
+          allow(job).to receive(:executions).and_return 2
+        end
+
         it 'logs an event' do
           expect { perform }.to_not raise_error
 
           expect(job_analytics).to have_logged_event(
             :risc_security_event_pushed,
-            risc_event_payload.merge(error: 'Exception from WebMock'),
+            risc_event_payload.merge(
+              error: 'Exception from WebMock',
+            ),
           )
-        end
-      end
-
-      context 'when performed in a worker' do
-        before do
-          allow(job).to receive(:queue_adapter).
-            and_return(ActiveJob::QueueAdapters::GoodJobAdapter.new)
-        end
-
-        it 'raises and retries via ActiveJob' do
-          expect { perform }.to raise_error(Faraday::SSLError)
-        end
-
-        context 'it has already failed twice' do
-          before do
-            allow(job).to receive(:executions).and_return 2
-          end
-
-          it 'logs an event' do
-            expect { perform }.to_not raise_error
-
-            expect(job_analytics).to have_logged_event(
-              :risc_security_event_pushed,
-              risc_event_payload.merge(
-                error: 'Exception from WebMock',
-                transport: 'async',
-              ),
-            )
-          end
         end
       end
     end
@@ -116,42 +99,24 @@ RSpec.describe RiscDeliveryJob do
         expect(job.faraday).to receive(:post).and_raise(Errno::ECONNREFUSED)
       end
 
-      context 'when performed inline' do
-        it 'logs an event' do
-          expect { perform }.to_not raise_error
-          expect(job_analytics).to have_logged_event(
-            :risc_security_event_pushed,
-            risc_event_payload.merge(error: 'Connection refused'),
-          )
-        end
+      it 'raises and retries via ActiveJob' do
+        expect { perform }.to raise_error(Errno::ECONNREFUSED)
       end
 
-      context 'when performed in a worker' do
+      context 'it has already failed twice' do
         before do
-          allow(job).to receive(:queue_adapter).
-            and_return(ActiveJob::QueueAdapters::GoodJobAdapter.new)
+          allow(job).to receive(:executions).and_return 2
         end
 
-        it 'raises and retries via ActiveJob' do
-          expect { perform }.to raise_error(Errno::ECONNREFUSED)
-        end
+        it 'logs an event' do
+          expect { perform }.to_not raise_error
 
-        context 'it has already failed twice' do
-          before do
-            allow(job).to receive(:executions).and_return 2
-          end
-
-          it 'logs an event' do
-            expect { perform }.to_not raise_error
-
-            expect(job_analytics).to have_logged_event(
-              :risc_security_event_pushed,
-              risc_event_payload.merge(
-                error: 'Connection refused',
-                transport: 'async',
-              ),
-            )
-          end
+          expect(job_analytics).to have_logged_event(
+            :risc_security_event_pushed,
+            risc_event_payload.merge(
+              error: 'Connection refused',
+            ),
+          )
         end
       end
     end
@@ -161,54 +126,32 @@ RSpec.describe RiscDeliveryJob do
         stub_request(:post, push_notification_url).to_return(status: 403)
       end
 
-      context 'when performed inline' do
-        it 'logs an event' do
-          expect { perform }.to_not raise_error
-          expect(job_analytics).to have_logged_event(
-            :risc_security_event_pushed,
-            risc_event_payload.merge(
-              error: 'http_push_error',
-              status: 403,
-            ),
-          )
-        end
+      it 'logs an event' do
+        expect { perform }.to_not raise_error
+        expect(job_analytics).to have_logged_event(
+          :risc_security_event_pushed,
+          risc_event_payload.merge(
+            error: 'http_push_error',
+            status: 403,
+          ),
+        )
       end
 
-      context 'when performed in a worker' do
+      context 'it has already failed twice' do
         before do
-          allow(job).to receive(:queue_adapter).
-            and_return(ActiveJob::QueueAdapters::GoodJobAdapter.new)
+          allow(job).to receive(:executions).and_return 2
         end
 
         it 'logs an event' do
           expect { perform }.to_not raise_error
+
           expect(job_analytics).to have_logged_event(
             :risc_security_event_pushed,
             risc_event_payload.merge(
               error: 'http_push_error',
               status: 403,
-              transport: 'async',
             ),
           )
-        end
-
-        context 'it has already failed twice' do
-          before do
-            allow(job).to receive(:executions).and_return 2
-          end
-
-          it 'logs an event' do
-            expect { perform }.to_not raise_error
-
-            expect(job_analytics).to have_logged_event(
-              :risc_security_event_pushed,
-              risc_event_payload.merge(
-                error: 'http_push_error',
-                status: 403,
-                transport: 'async',
-              ),
-            )
-          end
         end
       end
     end
@@ -218,44 +161,24 @@ RSpec.describe RiscDeliveryJob do
         stub_request(:post, push_notification_url).to_timeout
       end
 
-      context 'when performed inline' do
+      it 'raises and retries via ActiveJob' do
+        expect { perform }.to raise_error(Faraday::ConnectionFailed)
+      end
+
+      context 'it has already failed twice' do
+        before do
+          allow(job).to receive(:executions).and_return 2
+        end
+
         it 'logs an event' do
           expect { perform }.to_not raise_error
+
           expect(job_analytics).to have_logged_event(
             :risc_security_event_pushed,
             risc_event_payload.merge(
               error: 'execution expired',
             ),
           )
-        end
-      end
-
-      context 'when performed in a worker' do
-        before do
-          allow(job).to receive(:queue_adapter).
-            and_return(ActiveJob::QueueAdapters::GoodJobAdapter.new)
-        end
-
-        it 'raises and retries via ActiveJob' do
-          expect { perform }.to raise_error(Faraday::ConnectionFailed)
-        end
-
-        context 'it has already failed twice' do
-          before do
-            allow(job).to receive(:executions).and_return 2
-          end
-
-          it 'logs an event' do
-            expect { perform }.to_not raise_error
-
-            expect(job_analytics).to have_logged_event(
-              :risc_security_event_pushed,
-              risc_event_payload.merge(
-                error: 'execution expired',
-                transport: 'async',
-              ),
-            )
-          end
         end
       end
     end
@@ -267,44 +190,24 @@ RSpec.describe RiscDeliveryJob do
         end
       end
 
-      context 'when performed inline' do
-        it 'logs an event on limit hit' do
+      it 'raises on rate limit errors (and retries via ActiveJob)' do
+        expect { perform }.to raise_error(RedisRateLimiter::LimitError)
+      end
+
+      context 'it has already failed ten times' do
+        before do
+          allow(job).to receive(:executions).and_return 10
+        end
+
+        it 'logs an event' do
           expect { perform }.to_not raise_error
+
           expect(job_analytics).to have_logged_event(
             :risc_security_event_pushed,
             risc_event_payload.merge(
               error: 'rate limit for push-notification-https://push.example.gov has maxed out',
             ),
           )
-        end
-      end
-
-      context 'when performed in a worker' do
-        before do
-          allow(job).to receive(:queue_adapter).
-            and_return(ActiveJob::QueueAdapters::GoodJobAdapter.new)
-        end
-
-        it 'raises on rate limit errors (and retries via ActiveJob)' do
-          expect { perform }.to raise_error(RedisRateLimiter::LimitError)
-        end
-
-        context 'it has already failed ten times' do
-          before do
-            allow(job).to receive(:executions).and_return 10
-          end
-
-          it 'logs an event' do
-            expect { perform }.to_not raise_error
-
-            expect(job_analytics).to have_logged_event(
-              :risc_security_event_pushed,
-              risc_event_payload.merge(
-                error: 'rate limit for push-notification-https://push.example.gov has maxed out',
-                transport: 'async',
-              ),
-            )
-          end
         end
       end
 
@@ -324,7 +227,6 @@ RSpec.describe RiscDeliveryJob do
             risc_event_payload.merge(
               success: true,
               status: 200,
-              transport: 'direct',
             ),
           )
         end
