@@ -23,7 +23,6 @@ RSpec.describe RiscDeliveryJob do
         event_type: event_type,
         status: nil,
         success: false,
-        transport: 'async',
       }
     end
 

@@ -109,7 +109,6 @@ class RiscDeliveryJob < ApplicationJob
       event_type:,
       status:,
       success:,
-      transport: 'async',
     )
   end
 
