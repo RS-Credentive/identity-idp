@@ -10,11 +10,10 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2024_05_02_192930) do
+ActiveRecord::Schema[7.1].define(version: 2024_06_04_173515) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "citext"
   enable_extension "pg_stat_statements"
-  enable_extension "pgcrypto"
   enable_extension "plpgsql"
 
   create_table "account_reset_requests", force: :cascade do |t|
@@ -22,7 +21,6 @@ ActiveRecord::Schema[7.1].define(version: 2024_05_02_192930) do
     t.datetime "requested_at", precision: nil
     t.string "request_token"
     t.datetime "cancelled_at", precision: nil
-    t.datetime "reported_fraud_at", precision: nil
     t.datetime "granted_at", precision: nil
     t.string "granted_token"
     t.datetime "created_at", precision: nil, null: false
@@ -319,6 +317,7 @@ ActiveRecord::Schema[7.1].define(version: 2024_05_02_192930) do
     t.boolean "ready_for_status_check", default: false
     t.datetime "notification_sent_at", comment: "The time a notification was sent"
     t.datetime "last_batch_claimed_at"
+    t.string "sponsor_id"
     t.index ["profile_id"], name: "index_in_person_enrollments_on_profile_id"
     t.index ["ready_for_status_check"], name: "index_in_person_enrollments_on_ready_for_status_check", where: "(ready_for_status_check = true)"
     t.index ["status_check_attempted_at"], name: "index_in_person_enrollments_on_status_check_attempted_at", where: "(status = 1)"
@@ -657,7 +656,7 @@ ActiveRecord::Schema[7.1].define(version: 2024_05_02_192930) do
   add_foreign_key "iaa_gtcs", "partner_accounts"
   add_foreign_key "iaa_orders", "iaa_gtcs"
   add_foreign_key "in_person_enrollments", "profiles"
-  add_foreign_key "in_person_enrollments", "service_providers", column: "issuer", primary_key: "issuer"
+  add_foreign_key "in_person_enrollments", "service_providers", column: "issuer", primary_key: "issuer", validate: false
   add_foreign_key "in_person_enrollments", "users"
   add_foreign_key "integration_usages", "iaa_orders"
   add_foreign_key "integration_usages", "integrations"

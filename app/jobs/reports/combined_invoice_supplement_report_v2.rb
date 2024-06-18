@@ -44,13 +44,13 @@ module Reports
         )
       end
 
-      by_issuer_profile_age_results = iaas.flat_map do |iaa|
-        iaa.issuers.flat_map do |issuer|
+      by_issuer_profile_age_results = partner_accounts.flat_map do |partner_account|
+        partner_account.issuers.flat_map do |issuer|
           Db::MonthlySpAuthCount::NewUniqueMonthlyUserCountsByPartner.call(
-            partner: issuer, # just a label
+            partner: partner_account.partner,
             issuers: [issuer],
-            start_date: iaa.start_date,
-            end_date: iaa.end_date,
+            start_date: partner_account.start_date,
+            end_date: partner_account.end_date,
           )
         end
       end
@@ -97,13 +97,35 @@ module Reports
           'iaa_ial1_unique_users',
           'iaa_ial2_unique_users',
           'iaa_ial1_plus_2_unique_users',
-          'partner_ial2_new_unique_users_year1',
-          'partner_ial2_new_unique_users_year2',
-          'partner_ial2_new_unique_users_year3',
-          'partner_ial2_new_unique_users_year4',
-          'partner_ial2_new_unique_users_year5',
-          'partner_ial2_new_unique_users_year_greater_than_5',
-          'partner_ial2_new_unique_users_year_unknown',
+          'partner_ial2_unique_user_events_year1',
+          'partner_ial2_unique_user_events_year2',
+          'partner_ial2_unique_user_events_year3',
+          'partner_ial2_unique_user_events_year4',
+          'partner_ial2_unique_user_events_year5',
+          'partner_ial2_unique_user_events_year_greater_than_5',
+          'partner_ial2_unique_user_events_unknown',
+          'partner_ial2_new_unique_user_events_year1',
+          'partner_ial2_new_unique_user_events_year2',
+          'partner_ial2_new_unique_user_events_year3',
+          'partner_ial2_new_unique_user_events_year4',
+          'partner_ial2_new_unique_user_events_year5',
+          'partner_ial2_new_unique_user_events_year_greater_than_5',
+          'partner_ial2_new_unique_user_events_unknown',
+
+          'issuer_ial2_unique_user_events_year1',
+          'issuer_ial2_unique_user_events_year2',
+          'issuer_ial2_unique_user_events_year3',
+          'issuer_ial2_unique_user_events_year4',
+          'issuer_ial2_unique_user_events_year5',
+          'issuer_ial2_unique_user_events_year_greater_than_5',
+          'issuer_ial2_unique_user_events_unknown',
+          'issuer_ial2_new_unique_user_events_year1',
+          'issuer_ial2_new_unique_user_events_year2',
+          'issuer_ial2_new_unique_user_events_year3',
+          'issuer_ial2_new_unique_user_events_year4',
+          'issuer_ial2_new_unique_user_events_year5',
+          'issuer_ial2_new_unique_user_events_year_greater_than_5',
+          'issuer_ial2_new_unique_user_events_unknown',
 
           'issuer_ial1_total_auth_count',
           'issuer_ial2_total_auth_count',
@@ -112,13 +134,6 @@ module Reports
           'issuer_ial1_unique_users',
           'issuer_ial2_unique_users',
           'issuer_ial1_plus_2_unique_users',
-          'issuer_ial2_new_unique_users_year1',
-          'issuer_ial2_new_unique_users_year2',
-          'issuer_ial2_new_unique_users_year3',
-          'issuer_ial2_new_unique_users_year4',
-          'issuer_ial2_new_unique_users_year5',
-          'issuer_ial2_new_unique_users_year_greater_than_5',
-          'issuer_ial2_new_unique_users_year_unknown',
         ]
         by_issuer_iaa_issuer_year_months.each do |iaa_key, issuer_year_months|
           issuer_year_months.each do |issuer, year_months_data|
@@ -155,13 +170,35 @@ module Reports
                 (iaa_ial1_unique_users = extract(iaa_results, :unique_users, ial: 1)),
                 (iaa_ial2_unique_users = extract(iaa_results, :unique_users, ial: 2)),
                 iaa_ial1_unique_users + iaa_ial2_unique_users,
-                partner_results[:partner_ial2_new_unique_users_year1] || 0,
-                partner_results[:partner_ial2_new_unique_users_year2] || 0,
-                partner_results[:partner_ial2_new_unique_users_year3] || 0,
-                partner_results[:partner_ial2_new_unique_users_year4] || 0,
-                partner_results[:partner_ial2_new_unique_users_year5] || 0,
-                partner_results[:partner_ial2_new_unique_users_year_greater_than_5] || 0,
-                partner_results[:partner_ial2_new_unique_users_year_unknown] || 0,
+                partner_results[:partner_ial2_unique_user_events_year1] || 0,
+                partner_results[:partner_ial2_unique_user_events_year2] || 0,
+                partner_results[:partner_ial2_unique_user_events_year3] || 0,
+                partner_results[:partner_ial2_unique_user_events_year4] || 0,
+                partner_results[:partner_ial2_unique_user_events_year5] || 0,
+                partner_results[:partner_ial2_unique_user_events_year_greater_than_5] || 0,
+                partner_results[:partner_ial2_unique_user_events_unknown] || 0,
+                partner_results[:partner_ial2_new_unique_user_events_year1] || 0,
+                partner_results[:partner_ial2_new_unique_user_events_year2] || 0,
+                partner_results[:partner_ial2_new_unique_user_events_year3] || 0,
+                partner_results[:partner_ial2_new_unique_user_events_year4] || 0,
+                partner_results[:partner_ial2_new_unique_user_events_year5] || 0,
+                partner_results[:partner_ial2_new_unique_user_events_year_greater_than_5] || 0,
+                partner_results[:partner_ial2_new_unique_user_events_unknown] || 0,
+
+                issuer_profile_age_results[:partner_ial2_unique_user_events_year1] || 0,
+                issuer_profile_age_results[:partner_ial2_unique_user_events_year2] || 0,
+                issuer_profile_age_results[:partner_ial2_unique_user_events_year3] || 0,
+                issuer_profile_age_results[:partner_ial2_unique_user_events_year4] || 0,
+                issuer_profile_age_results[:partner_ial2_unique_user_events_year5] || 0,
+                issuer_profile_age_results[:partner_ial2_unique_user_events_year_greater_than_5] || 0, # rubocop:disable Layout/LineLength
+                issuer_profile_age_results[:partner_ial2_unique_user_events_unknown] || 0,
+                issuer_profile_age_results[:partner_ial2_new_unique_user_events_year1] || 0,
+                issuer_profile_age_results[:partner_ial2_new_unique_user_events_year2] || 0,
+                issuer_profile_age_results[:partner_ial2_new_unique_user_events_year3] || 0,
+                issuer_profile_age_results[:partner_ial2_new_unique_user_events_year4] || 0,
+                issuer_profile_age_results[:partner_ial2_new_unique_user_events_year5] || 0,
+                issuer_profile_age_results[:partner_ial2_new_unique_user_events_year_greater_than_5] || 0, # rubocop:disable Layout/LineLength
+                issuer_profile_age_results[:partner_ial2_new_unique_user_events_unknown] || 0,
 
                 (ial1_total_auth_count = extract(issuer_results, :total_auth_count, ial: 1)),
                 (ial2_total_auth_count = extract(issuer_results, :total_auth_count, ial: 2)),
@@ -170,13 +207,6 @@ module Reports
                 (issuer_ial1_unique_users = extract(issuer_results, :unique_users, ial: 1)),
                 (issuer_ial2_unique_users = extract(issuer_results, :unique_users, ial: 2)),
                 issuer_ial1_unique_users + issuer_ial2_unique_users,
-                issuer_profile_age_results[:partner_ial2_new_unique_users_year1] || 0,
-                issuer_profile_age_results[:partner_ial2_new_unique_users_year2] || 0,
-                issuer_profile_age_results[:partner_ial2_new_unique_users_year3] || 0,
-                issuer_profile_age_results[:partner_ial2_new_unique_users_year4] || 0,
-                issuer_profile_age_results[:partner_ial2_new_unique_users_year5] || 0,
-                issuer_profile_age_results[:partner_ial2_new_unique_users_year_greater_than_5] || 0,
-                issuer_profile_age_results[:partner_ial2_new_unique_users_year_unknown] || 0,
               ]
             end
           end

@@ -13,7 +13,6 @@ module OpenidConnect
     include SignInDurationConcern
 
     before_action :build_authorize_form_from_params, only: [:index]
-    before_action :block_biometric_requests_in_production, only: [:index]
     before_action :set_devise_failure_redirect_for_concurrent_session_logout
     before_action :pre_validate_authorize_form, only: [:index]
     before_action :sign_out_if_prompt_param_is_login_and_user_is_signed_in, only: [:index]
@@ -57,13 +56,6 @@ module OpenidConnect
       )
     end
 
-    def block_biometric_requests_in_production
-      if biometric_comparison_requested? &&
-         !FeatureManagement.idv_allow_selfie_check?
-        render_not_acceptable
-      end
-    end
-
     def biometric_comparison_requested?
       @authorize_form.biometric_comparison_requested?
     end
@@ -74,7 +66,7 @@ module OpenidConnect
     end
 
     def check_sp_handoff_bounced
-      return unless SpHandoffBounce::IsBounced.call(sp_session)
+      return unless sp_handoff_bouncer.bounced?
       analytics.sp_handoff_bounced_detected
       redirect_to bounced_url
       true
@@ -120,7 +112,7 @@ module OpenidConnect
 
     def handle_successful_handoff
       track_events
-      SpHandoffBounce::AddHandoffTimeToSession.call(sp_session)
+      sp_handoff_bouncer.add_handoff_time!
 
       redirect_user(
         @authorize_form.success_redirect_uri,
@@ -140,15 +132,13 @@ module OpenidConnect
     end
 
     def identity_needs_verification?
-      (resolved_authn_context_result.identity_proofing? &&
+      resolved_authn_context_result.identity_proofing? &&
         (current_user.identity_not_verified? ||
-        decorated_sp_session.requested_more_recent_verification?)) ||
-        current_user.reproof_for_irs?(service_provider: current_sp)
+        decorated_sp_session.requested_more_recent_verification?)
     end
 
     def biometric_comparison_needed?
-      FeatureManagement.idv_allow_selfie_check? &&
-        resolved_authn_context_result.biometric_comparison? &&
+      resolved_authn_context_result.biometric_comparison? &&
         !current_user.identity_verified_with_biometric_comparison?
     end
 
@@ -260,6 +250,10 @@ module OpenidConnect
           allow_other_host: true,
         )
       end
+    end
+
+    def sp_handoff_bouncer
+      @sp_handoff_bouncer ||= SpHandoffBouncer.new(sp_session)
     end
   end
 end

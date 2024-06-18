@@ -1,6 +1,6 @@
 require 'rails_helper'
 
-RSpec.describe TwoFactorAuthentication::OtpVerificationController, allowed_extra_analytics: [:*] do
+RSpec.describe TwoFactorAuthentication::OtpVerificationController do
   describe '#show' do
     context 'when resource is not fully authenticated yet' do
       before do
@@ -133,10 +133,6 @@ RSpec.describe TwoFactorAuthentication::OtpVerificationController, allowed_extra
         expect(controller.current_user.reload.second_factor_attempts_count).to eq 0
 
         stub_analytics
-        stub_attempts_tracker
-
-        expect(@irs_attempts_api_tracker).to receive(:mfa_login_phone_otp_submitted).
-          with({ reauthentication: false, success: false })
       end
 
       it 'logs analytics' do
@@ -218,16 +214,9 @@ RSpec.describe TwoFactorAuthentication::OtpVerificationController, allowed_extra
         controller.user_session[:mfa_selections] = ['sms']
 
         stub_analytics
-        stub_attempts_tracker
 
         expect(PushNotification::HttpPush).to receive(:deliver).
           with(PushNotification::MfaLimitAccountLockedEvent.new(user: controller.current_user))
-
-        expect(@irs_attempts_api_tracker).to receive(:mfa_login_phone_otp_submitted).
-          with({ reauthentication: false, success: false })
-
-        expect(@irs_attempts_api_tracker).to receive(:mfa_login_rate_limited).
-          with(mfa_device_type: 'otp')
 
         post :create, params: { code: '12345', otp_delivery_preference: 'sms' }
 
@@ -280,10 +269,6 @@ RSpec.describe TwoFactorAuthentication::OtpVerificationController, allowed_extra
 
       it 'tracks the valid authentication event' do
         stub_analytics
-        stub_attempts_tracker
-
-        expect(@irs_attempts_api_tracker).to receive(:mfa_login_phone_otp_submitted).
-          with(reauthentication: false, success: true)
 
         expect(controller).to receive(:handle_valid_verification_for_authentication_context).
           with(auth_method: TwoFactorAuthenticatable::AuthMethod::SMS).
@@ -413,10 +398,6 @@ RSpec.describe TwoFactorAuthentication::OtpVerificationController, allowed_extra
 
       describe 'when user submits an invalid OTP' do
         before do
-          stub_attempts_tracker
-
-          expect(@irs_attempts_api_tracker).to receive(:mfa_login_phone_otp_submitted).
-            with({ reauthentication: false, success: false })
           post :create, params: { code: '12345', otp_delivery_preference: 'sms' }
         end
 
@@ -431,10 +412,6 @@ RSpec.describe TwoFactorAuthentication::OtpVerificationController, allowed_extra
 
       describe 'when user submits a valid OTP' do
         before do
-          stub_attempts_tracker
-
-          expect(@irs_attempts_api_tracker).to receive(:mfa_login_phone_otp_submitted).
-            with({ reauthentication: false, success: true })
           post :create, params: {
             code: subject.current_user.direct_otp,
             otp_delivery_preference: 'sms',
@@ -465,7 +442,6 @@ RSpec.describe TwoFactorAuthentication::OtpVerificationController, allowed_extra
         controller.current_user.create_direct_otp
 
         stub_analytics
-        stub_attempts_tracker
 
         allow(controller).to receive(:create_user_event)
 
@@ -490,9 +466,19 @@ RSpec.describe TwoFactorAuthentication::OtpVerificationController, allowed_extra
             phone_configuration_created_at = controller.current_user.
               default_phone_configuration.created_at
 
-            properties = {
+            controller.user_session[:phone_id] = phone_id
+
+            post(
+              :create,
+              params: {
+                code: subject.current_user.direct_otp,
+                otp_delivery_preference: 'sms',
+              },
+            )
+
+            expect(@analytics).to have_logged_event(
+              'Multi-Factor Authentication Setup',
               success: true,
-              errors: nil,
               confirmation_for_add_phone: true,
               context: 'confirmation',
               multi_factor_auth_method: 'sms',
@@ -504,22 +490,7 @@ RSpec.describe TwoFactorAuthentication::OtpVerificationController, allowed_extra
               phone_fingerprint: Pii::Fingerprinter.fingerprint(parsed_phone.e164),
               enabled_mfa_methods_count: 1,
               in_account_creation_flow: true,
-            }
-
-            controller.user_session[:phone_id] = phone_id
-
-            expect(@irs_attempts_api_tracker).to receive(:mfa_enroll_phone_otp_submitted).
-              with(success: true)
-
-            post(
-              :create,
-              params: {
-                code: subject.current_user.direct_otp,
-                otp_delivery_preference: 'sms',
-              },
             )
-
-            expect(@analytics).to have_logged_event('Multi-Factor Authentication Setup', properties)
           end
 
           it 'resets otp session data' do
@@ -541,9 +512,6 @@ RSpec.describe TwoFactorAuthentication::OtpVerificationController, allowed_extra
 
         context 'user enters an invalid code' do
           before do
-            expect(@irs_attempts_api_tracker).to receive(:mfa_enroll_phone_otp_submitted).
-              with(success: false)
-
             post(
               :create,
               params: {
@@ -576,33 +544,27 @@ RSpec.describe TwoFactorAuthentication::OtpVerificationController, allowed_extra
           end
 
           it 'tracks an event' do
-            phone_configuration_created_at = controller.current_user.
-              default_phone_configuration.created_at
-
-            properties = {
+            expect(@analytics).to have_logged_event(
+              'Multi-Factor Authentication Setup',
               success: false,
-              errors: nil,
               error_details: { code: { wrong_length: true, incorrect: true } },
               confirmation_for_add_phone: true,
               context: 'confirmation',
               multi_factor_auth_method: 'sms',
               phone_configuration_id: controller.current_user.default_phone_configuration.id,
-              multi_factor_auth_method_created_at: phone_configuration_created_at.strftime('%s%L'),
+              multi_factor_auth_method_created_at: controller.current_user.
+                default_phone_configuration.created_at.strftime('%s%L'),
               new_device: true,
               area_code: parsed_phone.area_code,
               country_code: parsed_phone.country,
               phone_fingerprint: Pii::Fingerprinter.fingerprint(parsed_phone.e164),
               enabled_mfa_methods_count: 1,
               in_account_creation_flow: false,
-            }
-
-            expect(@analytics).to have_logged_event('Multi-Factor Authentication Setup', properties)
+            )
           end
 
           context 'user enters in valid code after invalid entry' do
             before do
-              expect(@irs_attempts_api_tracker).to receive(:mfa_enroll_phone_otp_submitted).
-                with(success: true)
               expect(subject.current_user.reload.second_factor_attempts_count).to eq 1
               post(
                 :create,
@@ -614,21 +576,6 @@ RSpec.describe TwoFactorAuthentication::OtpVerificationController, allowed_extra
             end
             it 'resets second_factor_attempts_count' do
               expect(subject.current_user.reload.second_factor_attempts_count).to eq 0
-            end
-          end
-
-          context 'user has exceeded the maximum number of attempts' do
-            it 'tracks the attempt event' do
-              sign_in_before_2fa(user)
-              user.second_factor_attempts_count =
-                IdentityConfig.store.login_otp_confirmation_max_attempts - 1
-              user.save
-
-              stub_attempts_tracker
-              expect(@irs_attempts_api_tracker).to receive(:mfa_enroll_rate_limited).
-                with(mfa_device_type: 'otp')
-
-              post :create, params: { code: '12345', otp_delivery_preference: 'sms' }
             end
           end
         end
@@ -664,25 +611,22 @@ RSpec.describe TwoFactorAuthentication::OtpVerificationController, allowed_extra
 
           it 'tracks the confirmation event' do
             parsed_phone = Phonelib.parse('+1 (703) 555-5555')
-            properties = {
+
+            response
+
+            expect(@analytics).to have_logged_event(
+              'Multi-Factor Authentication Setup',
               success: true,
-              errors: nil,
               context: 'confirmation',
               multi_factor_auth_method: 'sms',
-              multi_factor_auth_method_created_at: nil,
               new_device: true,
               confirmation_for_add_phone: false,
-              phone_configuration_id: nil,
               area_code: parsed_phone.area_code,
               country_code: parsed_phone.country,
               phone_fingerprint: Pii::Fingerprinter.fingerprint(parsed_phone.e164),
               enabled_mfa_methods_count: 0,
               in_account_creation_flow: false,
-            }
-
-            response
-
-            expect(@analytics).to have_logged_event('Multi-Factor Authentication Setup', properties)
+            )
 
             expect(controller).to have_received(:create_user_event).with(:phone_confirmed)
             expect(controller).to have_received(:create_user_event).exactly(:once)

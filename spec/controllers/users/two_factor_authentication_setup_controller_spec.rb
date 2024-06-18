@@ -1,6 +1,6 @@
 require 'rails_helper'
 
-RSpec.describe Users::TwoFactorAuthenticationSetupController, allowed_extra_analytics: [:*] do
+RSpec.describe Users::TwoFactorAuthenticationSetupController do
   describe 'GET index' do
     let(:user) { create(:user) }
 
@@ -138,21 +138,6 @@ RSpec.describe Users::TwoFactorAuthenticationSetupController, allowed_extra_anal
 
       expect(@analytics).to receive(:track_event).
         with('User Registration: 2FA Setup', result)
-
-      patch :create, params: {
-        two_factor_options_form: {
-          selection: ['voice', 'auth_app'],
-        },
-      }
-    end
-
-    it 'tracks IRS attempts event' do
-      stub_sign_in_before_2fa
-      stub_attempts_tracker
-
-      expect(@irs_attempts_api_tracker).to receive(:track_event).
-        with(:mfa_enroll_options_selected, success: true,
-                                           mfa_device_types: ['voice', 'auth_app'])
 
       patch :create, params: {
         two_factor_options_form: {

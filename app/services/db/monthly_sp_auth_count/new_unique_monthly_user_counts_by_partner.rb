@@ -5,6 +5,8 @@ module Db
     module NewUniqueMonthlyUserCountsByPartner
       extend Reports::QueryHelpers
 
+      UserVerifiedKey = Data.define(:user_id, :profile_verified_at, :profile_age).freeze
+
       module_function
 
       # @param [String] partner label for billing (Partner requesting agency)
@@ -43,19 +45,21 @@ module Db
           ) do
             Reports::BaseReport.transaction_with_timeout do
               ActiveRecord::Base.connection.execute(query).each do |row|
-                user_id = row['user_id']
                 year_month = row['year_month']
                 profile_age = row['profile_age']
+                user_id = row['user_id']
+                profile_verified_at = row['profile_verified_at']
 
-                year_month_to_users_to_profile_age[year_month][user_id] = profile_age
+                user_unique_id = UserVerifiedKey.new(user_id:, profile_verified_at:, profile_age:)
+
+                year_month_to_users_to_profile_age[year_month][user_unique_id] = profile_age
               end
             end
           end
         end
-
         rows = []
 
-        prev_seen_users = Set.new
+        prev_seen_user_proofed_events = Set.new
         issuers_set = issuers.to_set
         year_months = year_month_to_users_to_profile_age.keys.sort
 
@@ -63,21 +67,14 @@ module Db
         year_months.each do |year_month|
           users_to_profile_age = year_month_to_users_to_profile_age[year_month]
 
-          this_month_users = users_to_profile_age.keys.to_set
-          new_unique_users = this_month_users - prev_seen_users
+          this_month_user_proofed_events = users_to_profile_age.keys.to_set
+          new_unique_user_proofed_events = this_month_user_proofed_events -
+                                           prev_seen_user_proofed_events
 
-          profile_age_counts = new_unique_users.group_by do |user_id|
-            age = users_to_profile_age[user_id]
-            if age.nil? || age < 0
-              :unknown
-            elsif age > 4
-              :older
-            else
-              age.to_i
-            end
-          end.tap { |counts| counts.default = [] }
+          unique_profiles_by_age = bucket_by_profile_age(this_month_user_proofed_events)
+          new_unique_profiles_by_age = bucket_by_profile_age(new_unique_user_proofed_events)
 
-          prev_seen_users |= this_month_users
+          prev_seen_user_proofed_events |= this_month_user_proofed_events
 
           rows << {
             partner: partner,
@@ -85,15 +82,22 @@ module Db
             year_month: year_month,
             iaa_start_date: date_range.begin.to_s,
             iaa_end_date: date_range.end.to_s,
-            unique_users: this_month_users.count,
-            new_unique_users: new_unique_users.count,
-            partner_ial2_new_unique_users_year1: profile_age_counts[0].count,
-            partner_ial2_new_unique_users_year2: profile_age_counts[1].count,
-            partner_ial2_new_unique_users_year3: profile_age_counts[2].count,
-            partner_ial2_new_unique_users_year4: profile_age_counts[3].count,
-            partner_ial2_new_unique_users_year5: profile_age_counts[4].count,
-            partner_ial2_new_unique_users_year_greater_than_5: profile_age_counts[:older].count,
-            partner_ial2_new_unique_users_unknown: profile_age_counts[:unknown].count,
+            unique_user_proofed_events: this_month_user_proofed_events.count,
+            partner_ial2_unique_user_events_year1: unique_profiles_by_age[0].count,
+            partner_ial2_unique_user_events_year2: unique_profiles_by_age[1].count,
+            partner_ial2_unique_user_events_year3: unique_profiles_by_age[2].count,
+            partner_ial2_unique_user_events_year4: unique_profiles_by_age[3].count,
+            partner_ial2_unique_user_events_year5: unique_profiles_by_age[4].count,
+            partner_ial2_unique_user_events_year_greater_than_5: unique_profiles_by_age[:older].count, # rubocop:disable Layout/LineLength
+            partner_ial2_unique_user_events_unknown: unique_profiles_by_age[:unknown].count,
+            new_unique_user_proofed_events: new_unique_user_proofed_events.count,
+            partner_ial2_new_unique_user_events_year1: new_unique_profiles_by_age[0].count,
+            partner_ial2_new_unique_user_events_year2: new_unique_profiles_by_age[1].count,
+            partner_ial2_new_unique_user_events_year3: new_unique_profiles_by_age[2].count,
+            partner_ial2_new_unique_user_events_year4: new_unique_profiles_by_age[3].count,
+            partner_ial2_new_unique_user_events_year5: new_unique_profiles_by_age[4].count,
+            partner_ial2_new_unique_user_events_year_greater_than_5: new_unique_profiles_by_age[:older].count, # rubocop:disable Layout/LineLength
+            partner_ial2_new_unique_user_events_unknown: new_unique_profiles_by_age[:unknown].count,
           }
         end
         # rubocop:enable Metrics/BlockLength
@@ -105,7 +109,7 @@ module Db
       #  the first and last may be partial months
       # @return [Array<String>]
       def build_queries(issuers:, months:)
-        months.map do |month_range|
+        months.map do |month_range| # rubocop:disable Metrics/BlockLength
           params = {
             range_start: month_range.begin,
             range_end: month_range.end,
@@ -117,10 +121,12 @@ module Db
             SELECT
               subq.user_id AS user_id
             , %{year_month} AS year_month
-            , MIN(subq.profile_age) AS profile_age
+            , subq.profile_verified_at
+            , subq.profile_age
             FROM (
               SELECT
                   sp_return_logs.user_id
+                , sp_return_logs.profile_verified_at
                 , DATE_PART('year', AGE(sp_return_logs.returned_at, sp_return_logs.profile_verified_at)) AS profile_age
               FROM sp_return_logs
               WHERE
@@ -131,8 +137,23 @@ module Db
             ) subq
             GROUP BY
               subq.user_id
+              , subq.profile_verified_at
+              , subq.profile_age
           SQL
         end
+      end
+
+      def bucket_by_profile_age(unique_user_events)
+        unique_user_events.group_by do |user_unique_id|
+          age = user_unique_id.profile_age
+          if age.nil? || age < 0
+            :unknown
+          elsif age > 4
+            :older
+          else
+            age.to_i
+          end
+        end.tap { |counts| counts.default = [] }
       end
     end
   end

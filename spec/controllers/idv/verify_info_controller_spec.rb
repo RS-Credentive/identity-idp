@@ -8,7 +8,6 @@ RSpec.describe Idv::VerifyInfoController, allowed_extra_analytics: [:*] do
     {
       analytics_id: 'Doc Auth',
       flow_path: 'standard',
-      irs_reproofing: false,
       step: 'verify',
     }.merge(ab_test_args)
   end
@@ -21,7 +20,6 @@ RSpec.describe Idv::VerifyInfoController, allowed_extra_analytics: [:*] do
     stub_sign_in(user)
     stub_up_to(:ssn, idv_session: subject.idv_session)
     stub_analytics
-    stub_attempts_tracker
     allow(subject).to receive(:ab_test_analytics_buckets).and_return(ab_test_args)
   end
 
@@ -53,7 +51,6 @@ RSpec.describe Idv::VerifyInfoController, allowed_extra_analytics: [:*] do
       {
         analytics_id: 'Doc Auth',
         flow_path: 'standard',
-        irs_reproofing: false,
         step: 'verify',
       }.merge(ab_test_args)
     end
@@ -130,13 +127,6 @@ RSpec.describe Idv::VerifyInfoController, allowed_extra_analytics: [:*] do
 
         expect(response).to redirect_to idv_session_errors_ssn_failure_url
       end
-
-      it 'logs the correct attempts event' do
-        expect(@irs_attempts_api_tracker).to receive(:idv_verification_rate_limited).
-          with({ limiter_context: 'multi-session' })
-
-        get :show
-      end
     end
 
     context 'when the user is proofing rate limited' do
@@ -151,13 +141,6 @@ RSpec.describe Idv::VerifyInfoController, allowed_extra_analytics: [:*] do
         get :show
 
         expect(response).to redirect_to idv_session_errors_failure_url
-      end
-
-      it 'logs the correct attempts event' do
-        expect(@irs_attempts_api_tracker).to receive(:idv_verification_rate_limited).
-          with({ limiter_context: 'single-session' })
-
-        get :show
       end
     end
 
@@ -206,13 +189,6 @@ RSpec.describe Idv::VerifyInfoController, allowed_extra_analytics: [:*] do
           expect(controller.idv_session.threatmetrix_review_status).to eq('pass')
         end
 
-        it 'it logs IRS idv_tmx_fraud_check event' do
-          expect(@irs_attempts_api_tracker).to receive(:idv_tmx_fraud_check).with(
-            success: true,
-          )
-          get :show
-        end
-
         # we use the client name for some error tracking, so make sure
         # it gets through to the analytics event log.
         it 'logs the analytics event, including the client' do
@@ -244,13 +220,6 @@ RSpec.describe Idv::VerifyInfoController, allowed_extra_analytics: [:*] do
           get :show
           expect(controller.idv_session.threatmetrix_review_status).to be_nil
         end
-
-        it 'it logs IRS idv_tmx_fraud_check event' do
-          expect(@irs_attempts_api_tracker).to receive(:idv_tmx_fraud_check).with(
-            success: false,
-          )
-          get :show
-        end
       end
 
       context 'when threatmetrix response is Reject' do
@@ -260,13 +229,6 @@ RSpec.describe Idv::VerifyInfoController, allowed_extra_analytics: [:*] do
           get :show
           expect(controller.idv_session.threatmetrix_review_status).to eq('reject')
         end
-
-        it 'it logs IRS idv_tmx_fraud_check event' do
-          expect(@irs_attempts_api_tracker).to receive(:idv_tmx_fraud_check).with(
-            success: false,
-          )
-          get :show
-        end
       end
 
       context 'when threatmetrix response is Review' do
@@ -275,13 +237,6 @@ RSpec.describe Idv::VerifyInfoController, allowed_extra_analytics: [:*] do
         it 'sets the review status in the idv session' do
           get :show
           expect(controller.idv_session.threatmetrix_review_status).to eq('review')
-        end
-
-        it 'it logs IRS idv_tmx_fraud_check event' do
-          expect(@irs_attempts_api_tracker).to receive(:idv_tmx_fraud_check).with(
-            success: false,
-          )
-          get :show
         end
       end
     end
@@ -302,7 +257,7 @@ RSpec.describe Idv::VerifyInfoController, allowed_extra_analytics: [:*] do
 
       let(:async_state) do
         # Here we're trying to match the store to redis -> read from redis flow this data travels
-        result = Proofing::Resolution::ResultAdjudicator.new(
+        adjudicated_result = Proofing::Resolution::ResultAdjudicator.new(
           state_id_result: Proofing::StateIdResult.new(
             success: success,
             errors: errors,
@@ -317,11 +272,12 @@ RSpec.describe Idv::VerifyInfoController, allowed_extra_analytics: [:*] do
           resolution_result: Proofing::Resolution::Result.new(success: true),
           same_address_as_id: true,
           should_proof_state_id: true,
-        )
+        ).adjudicated_result.to_h
+        adjudicated_result[:context].delete(:sp_costs_added)
 
         document_capture_session.create_proofing_session
 
-        document_capture_session.store_proofing_result(result.adjudicated_result.to_h)
+        document_capture_session.store_proofing_result(adjudicated_result)
 
         document_capture_session.load_proofing_result
       end
@@ -340,26 +296,14 @@ RSpec.describe Idv::VerifyInfoController, allowed_extra_analytics: [:*] do
             hash_including(**analytics_args, success: true, analytics_id: 'Doc Auth'),
           )
         end
-
-        it 'records the cost as billable' do
-          expect { put :show }.to change { SpCost.where(cost_type: 'aamva').count }.by(1)
-        end
       end
 
       context 'when aamva returns success: false but no exception' do
         let(:success) { false }
 
-        it 'logs a cost' do
-          expect { put :show }.to change { SpCost.where(cost_type: 'aamva').count }.by(1)
-        end
-      end
-
-      context 'when the jurisdiction is unsupported' do
-        let(:success) { true }
-        let(:vendor_name) { 'UnsupportedJurisdiction' }
-
-        it 'does not consider the request billable' do
-          expect { put :show }.to_not change { SpCost.where(cost_type: 'aamva').count }
+        it 'redirects to the warning URL' do
+          put :show
+          expect(response).to redirect_to(idv_session_errors_warning_url)
         end
       end
 
@@ -380,10 +324,6 @@ RSpec.describe Idv::VerifyInfoController, allowed_extra_analytics: [:*] do
             step_name: 'verify_info',
             remaining_submit_attempts: kind_of(Numeric),
           )
-        end
-
-        it 'does not log a cost' do
-          expect { put :show }.to change { SpCost.where(cost_type: 'aamva').count }.by(0)
         end
       end
     end
@@ -419,8 +359,8 @@ RSpec.describe Idv::VerifyInfoController, allowed_extra_analytics: [:*] do
 
       expect(Idv::Agent).to receive(:new).with(
         hash_including(
-          uuid_prefix: app_id,
-          uuid: user.uuid,
+          ssn: Idp::Constants::MOCK_IDV_APPLICANT_WITH_SSN[:ssn],
+          **Idp::Constants::MOCK_IDV_APPLICANT,
         ),
       ).and_call_original
 
@@ -450,13 +390,6 @@ RSpec.describe Idv::VerifyInfoController, allowed_extra_analytics: [:*] do
 
         expect(response).to redirect_to idv_session_errors_ssn_failure_url
       end
-
-      it 'logs the correct attempts event' do
-        expect(@irs_attempts_api_tracker).to receive(:idv_verification_rate_limited).
-          with({ limiter_context: 'multi-session' })
-
-        put :update
-      end
     end
 
     context 'when the user is proofing rate limited' do
@@ -471,13 +404,6 @@ RSpec.describe Idv::VerifyInfoController, allowed_extra_analytics: [:*] do
         put :update
 
         expect(response).to redirect_to idv_session_errors_failure_url
-      end
-
-      it 'logs the correct attempts event' do
-        expect(@irs_attempts_api_tracker).to receive(:idv_verification_rate_limited).
-          with({ limiter_context: 'single-session' })
-
-        put :update
       end
     end
   end

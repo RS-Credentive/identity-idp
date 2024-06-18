@@ -74,7 +74,7 @@ module Idv
       end
 
       def pii
-        user_session.dig('idv/in_person', :pii_from_user)
+        user_session.dig('idv/in_person', :pii_from_user).merge(ssn: idv_session.ssn)
       end
 
       # override IdvSessionConcern
@@ -87,7 +87,6 @@ module Idv
           flow_path: idv_session.flow_path,
           step: 'verify',
           analytics_id: 'In Person Proofing',
-          irs_reproofing: irs_reproofing?,
         }.merge(ab_test_analytics_buckets).
           merge(**extra_analytics_properties)
       end

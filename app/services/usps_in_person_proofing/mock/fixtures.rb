@@ -19,6 +19,10 @@ module UspsInPersonProofing
         load_response_fixture('request_facilities_response.json')
       end
 
+      def self.request_enhanced_ipp_facilities_response
+        load_response_fixture('request_enhanced_ipp_facilities_response.json')
+      end
+
       def self.request_facilities_response_with_unordered_distance
         load_response_fixture('request_facilities_response_with_unordered_distance.json')
       end
@@ -37,6 +41,10 @@ module UspsInPersonProofing
 
       def self.request_enroll_response
         load_response_fixture('request_enroll_response.json')
+      end
+
+      def self.request_enroll_response_enhanced_ipp
+        load_response_fixture('request_enroll_response_enhanced_ipp.json')
       end
 
       def self.request_enroll_bad_request_response

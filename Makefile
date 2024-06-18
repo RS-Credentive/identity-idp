@@ -12,6 +12,7 @@ ARTIFACT_DESTINATION_FILE ?= ./tmp/idp.tar.gz
 
 .PHONY: \
 	analytics_events \
+	audit \
 	brakeman \
 	build_artifact \
 	check \
@@ -25,12 +26,12 @@ ARTIFACT_DESTINATION_FILE ?= ./tmp/idp.tar.gz
 	lint_analytics_events \
 	lint_analytics_events_sorted \
 	lint_country_dialing_codes \
+	lint_database_schema_files \
 	lint_erb \
 	lint_font_glyphs \
 	lint_lockfiles \
 	lint_new_typescript_files \
 	lint_optimized_assets \
-	lint_tracker_events \
 	lint_yaml \
 	lint_yarn_workspaces \
 	lint_asset_bundle_size \
@@ -72,15 +73,10 @@ else
 endif
 	@echo "--- analytics_events ---"
 	make lint_analytics_events
-	make lint_tracker_events
 	make lint_analytics_events_sorted
 	@echo "--- brakeman ---"
 	make brakeman
-	@echo "--- bundler-audit ---"
-	bundle exec bundler-audit check --update
 	# JavaScript
-	@echo "--- yarn audit ---"
-	yarn audit --groups dependencies; test $$? -le 7
 	@echo "--- eslint ---"
 	yarn run lint
 	@echo "--- typescript ---"
@@ -106,6 +102,12 @@ endif
 	make lint_spec_file_name
 	@echo "--- lint migrations ---"
 	make lint_migrations
+
+audit: ## Checks packages for vulnerabilities
+	@echo "--- bundler-audit ---"
+	bundle exec bundler-audit check --update
+	@echo "--- yarn audit ---"
+	yarn audit --groups dependencies; test $$? -le 7
 
 lint_erb: ## Lints ERB files
 	bundle exec erblint app/views app/components
@@ -255,6 +257,10 @@ update_pinpoint_supported_countries: ## Updates list of countries supported by P
 lint_country_dialing_codes: update_pinpoint_supported_countries ## Checks that countries supported by Pinpoint for voice and SMS are up to date
 	(! git diff --name-only | grep config/country_dialing_codes.yml) || (echo "Error: Run 'make update_pinpoint_supported_countries' to update country codes"; exit 1)
 
+lint_database_schema_files: ## Checks that database schema files have not changed
+	(! git diff --name-only | grep db/schema.rb) || (echo "Error: db/schema.rb does not match after running migrations"; exit 1)
+	(! git diff --name-only | grep db/worker_jobs_schema.rb) || (echo "Error: db/worker_jobs_schema.rb does not match after running migrations"; exit 1)
+
 build_artifact $(ARTIFACT_DESTINATION_FILE): ## Builds zipped tar file artifact with IDP source code and Ruby/JS dependencies
 	@echo "Building artifact into $(ARTIFACT_DESTINATION_FILE)"
 	bundle config set --local cache_all true
@@ -290,14 +296,11 @@ lint_analytics_events_sorted:
 	@test "$(shell grep '^  def ' app/services/analytics_events.rb)" = "$(shell grep '^  def ' app/services/analytics_events.rb | sort)" \
 		|| (echo '\033[1;31mError: methods in analytics_events.rb are not sorted alphabetically\033[0m' && exit 1)
 
-lint_tracker_events: .yardoc ## Checks that all methods on AnalyticsEvents are documented
-	bundle exec ruby lib/analytics_events_documenter.rb --class-name="IrsAttemptsApi::TrackerEvents" --check --skip-extra-params $<
-
 public/api/_analytics-events.json: .yardoc .yardoc/objects/root.dat
 	mkdir -p public/api
 	bundle exec ruby lib/analytics_events_documenter.rb --class-name="AnalyticsEvents" --json $< > $@
 
-.yardoc .yardoc/objects/root.dat: app/services/analytics_events.rb app/services/irs_attempts_api/tracker_events.rb
+.yardoc .yardoc/objects/root.dat: app/services/analytics_events.rb
 	bundle exec yard doc \
 		--fail-on-warning \
 		--type-tag identity.idp.previous_event_name:"Previous Event Name" \

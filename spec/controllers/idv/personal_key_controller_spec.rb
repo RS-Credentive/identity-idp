@@ -30,6 +30,7 @@ RSpec.describe Idv::PersonalKeyController do
   let(:applicant) { Idp::Constants::MOCK_IDV_APPLICANT_WITH_PHONE }
   let(:password) { 'sekrit phrase' }
   let(:user) { create(:user, :fully_registered, password: password) }
+  let(:is_enhanced_ipp) { false }
 
   # Most (but not all) of these tests assume that a profile has been minted
   # from the data in idv_session. Set this to false to prevent this behavior
@@ -50,7 +51,6 @@ RSpec.describe Idv::PersonalKeyController do
 
   before do
     stub_analytics
-    stub_attempts_tracker
 
     stub_sign_in(user)
 
@@ -69,7 +69,7 @@ RSpec.describe Idv::PersonalKeyController do
     idv_session.applicant = applicant
 
     if mint_profile_from_idv_session
-      idv_session.create_profile_from_applicant_with_password(password)
+      idv_session.create_profile_from_applicant_with_password(password, is_enhanced_ipp)
     end
   end
 
@@ -294,11 +294,6 @@ RSpec.describe Idv::PersonalKeyController do
       expect(idv_session.profile.recover_pii(normalize_personal_key(code))).to eq(
         Pii::Attributes.new_from_hash(applicant),
       )
-    end
-
-    it 'logs when user generates personal key' do
-      expect(@irs_attempts_api_tracker).to receive(:idv_personal_key_generated)
-      get :show
     end
 
     context 'user selected gpo verification' do
